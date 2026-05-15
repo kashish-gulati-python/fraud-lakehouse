@@ -17,9 +17,16 @@ from confluent_kafka import Producer
 
 from schemas import MerchantCategory, Transaction
 
+from dotenv import load_dotenv
+load_dotenv()
+
+
 logger = logging.getLogger(__name__)
 
-KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:19092")
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP")
+print("BOOTSTRAP:", KAFKA_BOOTSTRAP)
+KAFKA_API_KEY = os.getenv("KAFKA_API_KEY")
+KAFKA_API_SECRET = os.getenv("KAFKA_API_SECRET")
 TOPIC = os.getenv("TRANSACTIONS_TOPIC", "transactions")
 TXN_PER_SECOND = float(os.getenv("TXN_PER_SECOND", "5"))
 FRAUD_RATE = float(os.getenv("FRAUD_RATE", "0.05"))
@@ -65,6 +72,25 @@ def build_merchants(n: int) -> list[Merchant]:
         )
         for i in range(n)
     ]
+
+
+def build_producer() -> Producer:
+    config = {
+        "bootstrap.servers": KAFKA_BOOTSTRAP,
+        "linger.ms": 50,
+        "compression.type": "lz4",
+        "acks": "all",
+        "enable.idempotence": True,
+    }
+    # SASL/SSL only when talking to Confluent Cloud
+    if KAFKA_API_KEY and KAFKA_API_SECRET:
+        config.update({
+            "security.protocol": "SASL_SSL",
+            "sasl.mechanisms": "PLAIN",
+            "sasl.username": KAFKA_API_KEY,
+            "sasl.password": KAFKA_API_SECRET,
+        })
+    return Producer(config)
 
 
 def normal_transaction(user: User, merchants: list[Merchant]) -> Transaction:
@@ -119,13 +145,7 @@ def main() -> None:
     merchants = build_merchants(N_MERCHANTS)
     logger.info("Pool: %d users, %d merchants", len(users), len(merchants))
 
-    producer = Producer({
-        "bootstrap.servers": KAFKA_BOOTSTRAP,
-        "linger.ms": 50,
-        "compression.type": "lz4",
-        "acks": "all",
-        "enable.idempotence": True,
-    })
+    producer = build_producer()
 
     stop = False
 
